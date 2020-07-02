@@ -1,2 +1,2 @@
-rootProject.name = "real-time-search-agent"
+rootProject.name = "search-agent"
 include("percolator", "immediate-messenger", "batched-messenger")

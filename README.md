@@ -1,8 +1,12 @@
-Near Real Time (NRT) search agent
-=================================
+Search agent 
+============
 
 
-This is a proof of concept project on implementing a near real time (NRT)
+This is a proof of concept project on implementing both:
+
+- near real time (NRT)
+- batched (hourly/daily)
+
 search agent functionality.
 
 
@@ -45,7 +49,7 @@ in order to avoid sending duplicated messages (e.g.: for a batched search agent 
 
 The architecture of this proof of concept system is relatively simple:
 
-![architecture](images/real-time-search-agent.png)
+![architecture](images/search-agent.png)
 
 For the sake of better understanding the purpose of this system we'll consider that this
 system handles the search agent functionality for a news website.
