@@ -1,5 +1,6 @@
 package com.findinpath.messenger.immediate
 
+import com.datastax.driver.core.Session
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.AdminClient
 import org.apache.kafka.clients.admin.AdminClientConfig
@@ -14,9 +15,11 @@ import org.awaitility.kotlin.await
 import org.hamcrest.CoreMatchers.equalTo
 import org.hamcrest.MatcherAssert.assertThat
 import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
+import org.testcontainers.containers.CassandraContainer
 import org.testcontainers.containers.KafkaContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
@@ -37,6 +40,10 @@ class ImmediateSearchAgentHitProcessorTaskTest {
 
     private lateinit var emailsSent : MutableList<EmailDetails>
 
+    private lateinit var cassandraSession: Session
+
+    private lateinit var cassandraSearchAgentRepository: CassandraSearchAgentRepository
+
     lateinit var immediateSearchAgentHitProducer: Producer<String, String>
 
 
@@ -45,15 +52,20 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         emailsSent = mutableListOf()
         topic = "immediate-" + UUID.randomUUID().toString()
 
+        cassandraSession = cassandraContainer.cluster.connect()
+        cassandraSearchAgentRepository = CassandraSearchAgentRepository(cassandraSession)
+
+        createTopic(topic)
+
         immediateSearchAgentHitProcessorTask = ImmediateSearchAgentHitProcessorTask(
             kafkaContainer.bootstrapServers,
             LoggingEmailService { emailDetails -> emailsSent.add(emailDetails) },
+            cassandraSearchAgentRepository,
             topic,
             UUID.randomUUID().toString()
         )
 
 
-        createTopic(topic)
 
         Executors.newCachedThreadPool().submit(immediateSearchAgentHitProcessorTask)
 
@@ -61,6 +73,7 @@ class ImmediateSearchAgentHitProcessorTaskTest {
 
         immediateSearchAgentHitProducer = createProducer(kafkaContainer.bootstrapServers)
 
+        truncateCassandraTables()
 
     }
 
@@ -68,6 +81,11 @@ class ImmediateSearchAgentHitProcessorTaskTest {
     fun tearDown() {
         if (this::immediateSearchAgentHitProcessorTask.isInitialized) {
             immediateSearchAgentHitProcessorTask.stop()
+        }
+
+
+        if (this::cassandraSession.isInitialized){
+            cassandraSession.close()
         }
 
         immediateSearchAgentHitProducer.close(Duration.ofMillis(100))
@@ -96,6 +114,8 @@ class ImmediateSearchAgentHitProcessorTaskTest {
 
         assertThat(emailsSent[0].searchAgent, equalTo(searchAgent))
         assertThat(emailsSent[0].news, equalTo(news))
+
+        assertThat(cassandraSearchAgentRepository.isProcessingDone(searchAgent.id, news.id), equalTo(true))
     }
 
 
@@ -134,6 +154,9 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         assertThat(emailsSent[0].news, equalTo(news1))
         assertThat(emailsSent[1].searchAgent, equalTo(searchAgent))
         assertThat(emailsSent[1].news, equalTo(news2))
+
+        assertThat(cassandraSearchAgentRepository.isProcessingDone(searchAgent.id, news1.id), equalTo(true))
+        assertThat(cassandraSearchAgentRepository.isProcessingDone(searchAgent.id, news2.id), equalTo(true))
 
     }
 
@@ -203,11 +226,49 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         return KafkaProducer<String, String>(props)
     }
 
+
+    fun truncateCassandraTables(){
+        cassandraContainer.cluster.connect().use { session ->
+            session.execute(TRUNCATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_TABLE)
+        }
+    }
+
     companion object {
         val CONFLUENT_PLATFORM_VERSION: String = "5.5.0"
 
 
         @Container
         val kafkaContainer = KafkaContainer(CONFLUENT_PLATFORM_VERSION)
+
+
+        private const val CREATE_DEMO_KEYSPACE_DDL = "CREATE KEYSPACE DEMO \n" +
+                "WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1 }"
+
+        private const val CREATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_DDL =
+            "CREATE TABLE DEMO.SEARCH_AGENT_PROCESSED_NEWS (\n" +
+                    "search_agent_id BIGINT,\n" +
+                    "news_id BIGINT,\n" +
+                    "processing_date TIMESTAMP,\n" +
+                    "PRIMARY KEY (search_agent_id, news_id)\n" +
+                    ") WITH default_time_to_live = 259200;\n" // 3 days should be enough for keeping record of the processed news
+
+        private const val TRUNCATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_TABLE =
+            "TRUNCATE TABLE DEMO.SEARCH_AGENT_PROCESSED_NEWS"
+
+        @Container
+        val cassandraContainer = SpecifiedCassandraContainer("cassandra:3.11")
+
+        @BeforeAll
+        @JvmStatic
+        internal fun setupCassandra() {
+            cassandraContainer.cluster.connect().use { session ->
+                session.execute(CREATE_DEMO_KEYSPACE_DDL)
+                session.execute(CREATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_DDL)
+
+            }
+        }
+
+        class SpecifiedCassandraContainer(image: String) : CassandraContainer<SpecifiedCassandraContainer>(image)
+
     }
 }

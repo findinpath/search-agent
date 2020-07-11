@@ -10,10 +10,12 @@ import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.StringDeserializer
 import org.slf4j.LoggerFactory
 import java.time.Duration
+import java.time.Instant
 import java.util.Properties
 
 class ImmediateSearchAgentHitProcessorTask(kafkaBootstrapServers: String,
                                            private val emailService: EmailService,
+                                           private val searchAgentRepository: SearchAgentRepository,
                                            val topic: String,
                                            searchAgentHitConsumerGroupId: String = CONSUMER_GROUP_ID
 ): Runnable{
@@ -84,10 +86,14 @@ class ImmediateSearchAgentHitProcessorTask(kafkaBootstrapServers: String,
     }
 
     fun process(searchAgentHit: ImmediateSearchAgentHit){
-        //TODO avoid duplicate emails by checking into Cassandra
-        // < search agent id, news id, news published date>
+        if (searchAgentRepository.isProcessingDone(searchAgentHit.searchAgent.id, searchAgentHit.news.id)){
+            // avoid sending duplicate messages (in case of failures on the percolator side)
+            return
+        }
 
         emailService.sendEmail(EmailDetails(searchAgentHit.searchAgent, searchAgentHit.news))
+
+        searchAgentRepository.markAsProcessed(searchAgentHit.searchAgent.id, searchAgentHit.news.id, Instant.now())
     }
 
     fun stop() {

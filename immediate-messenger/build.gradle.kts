@@ -17,9 +17,7 @@ dependencies{
     implementation("org.apache.kafka:kafka-streams:2.5.0")
     implementation("io.confluent:kafka-streams-avro-serde:5.5.0")
 
-    implementation("org.elasticsearch:elasticsearch:7.7.1")
-    implementation("org.elasticsearch.plugin:percolator-client:7.7.1")
-    implementation("org.elasticsearch.client:elasticsearch-rest-high-level-client:7.7.1")
+    implementation("com.datastax.cassandra:cassandra-driver-core:3.7.2")
 
 
     implementation("org.json:json:20200518")
@@ -31,6 +29,8 @@ dependencies{
     testImplementation("org.testcontainers:junit-jupiter:1.14.3")
     testImplementation("org.testcontainers:elasticsearch:1.14.3")
     testImplementation("org.testcontainers:kafka:1.14.3")
+    testImplementation("org.testcontainers:cassandra:1.14.3")
+
 
 
     testImplementation("org.awaitility:awaitility-kotlin:4.0.3")

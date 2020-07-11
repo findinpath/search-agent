@@ -1,12 +1,12 @@
 package com.findinpath.messenger.immediate
 
-import org.apache.http.HttpHost
 import org.slf4j.LoggerFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
 class ImmediateSearchAgentHitProcessor(val kafkaBootstrapServers: String,
                                        val emailService: EmailService,
+                                       val searchAgentRepository: SearchAgentRepository,
                                        val tasks: Int,
                                        val topic: String) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -20,6 +20,7 @@ class ImmediateSearchAgentHitProcessor(val kafkaBootstrapServers: String,
                 ImmediateSearchAgentHitProcessorTask(
                     kafkaBootstrapServers,
                     emailService,
+                    searchAgentRepository,
                     topic
                 )
             )
