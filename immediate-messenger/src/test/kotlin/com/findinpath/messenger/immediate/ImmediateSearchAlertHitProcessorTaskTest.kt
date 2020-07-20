@@ -31,10 +31,10 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 @Testcontainers
-class ImmediateSearchAgentHitProcessorTaskTest {
+class ImmediateSearchAlertHitProcessorTaskTest {
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    lateinit var immediateSearchAgentHitProcessorTask: ImmediateSearchAgentHitProcessorTask
+    lateinit var immediateSearchAlertHitProcessorTask: ImmediateSearchAlertHitProcessorTask
 
     private lateinit var topic:String
 
@@ -42,9 +42,9 @@ class ImmediateSearchAgentHitProcessorTaskTest {
 
     private lateinit var cassandraSession: Session
 
-    private lateinit var cassandraSearchAgentRepository: CassandraSearchAgentRepository
+    private lateinit var cassandraSearchAlertRepository: CassandraSearchAlertRepository
 
-    lateinit var immediateSearchAgentHitProducer: Producer<String, String>
+    lateinit var immediateSearchAlertHitProducer: Producer<String, String>
 
 
     @BeforeEach
@@ -53,25 +53,25 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         topic = "immediate-" + UUID.randomUUID().toString()
 
         cassandraSession = cassandraContainer.cluster.connect()
-        cassandraSearchAgentRepository = CassandraSearchAgentRepository(cassandraSession)
+        cassandraSearchAlertRepository = CassandraSearchAlertRepository(cassandraSession)
 
         createTopic(topic)
 
-        immediateSearchAgentHitProcessorTask = ImmediateSearchAgentHitProcessorTask(
+        immediateSearchAlertHitProcessorTask = ImmediateSearchAlertHitProcessorTask(
             kafkaContainer.bootstrapServers,
             LoggingEmailService { emailDetails -> emailsSent.add(emailDetails) },
-            cassandraSearchAgentRepository,
+            cassandraSearchAlertRepository,
             topic,
             UUID.randomUUID().toString()
         )
 
 
 
-        Executors.newCachedThreadPool().submit(immediateSearchAgentHitProcessorTask)
+        Executors.newCachedThreadPool().submit(immediateSearchAlertHitProcessorTask)
 
-        await.atMost(Duration.ofSeconds(30)).until { immediateSearchAgentHitProcessorTask.partitionsAssigned }
+        await.atMost(Duration.ofSeconds(30)).until { immediateSearchAlertHitProcessorTask.partitionsAssigned }
 
-        immediateSearchAgentHitProducer = createProducer(kafkaContainer.bootstrapServers)
+        immediateSearchAlertHitProducer = createProducer(kafkaContainer.bootstrapServers)
 
         truncateCassandraTables()
 
@@ -79,8 +79,8 @@ class ImmediateSearchAgentHitProcessorTaskTest {
 
     @AfterEach
     fun tearDown() {
-        if (this::immediateSearchAgentHitProcessorTask.isInitialized) {
-            immediateSearchAgentHitProcessorTask.stop()
+        if (this::immediateSearchAlertHitProcessorTask.isInitialized) {
+            immediateSearchAlertHitProcessorTask.stop()
         }
 
 
@@ -88,7 +88,7 @@ class ImmediateSearchAgentHitProcessorTaskTest {
             cassandraSession.close()
         }
 
-        immediateSearchAgentHitProducer.close(Duration.ofMillis(100))
+        immediateSearchAlertHitProducer.close(Duration.ofMillis(100))
         deleteTopic(topic)
 
     }
@@ -103,24 +103,24 @@ class ImmediateSearchAgentHitProcessorTaskTest {
             Instant.now()
         )
 
-        val searchAgent = SearchAgent(1L, "news aobout snow", "contact@mail.com")
+        val searchAlert = SearchAlert(1L, "news aobout snow", "contact@mail.com")
 
-        val immediateSearchAgentHit = ImmediateSearchAgentHit(searchAgent, news)
+        val immediateSearchAlertHit = ImmediateSearchAlertHit(searchAlert, news)
 
-        logger.info("Write  $immediateSearchAgentHit to the topic $topic")
-        immediateSearchAgentHitProducer.send(ProducerRecord(topic, searchAgent.id.toString(), jsonMapper.writeValueAsString(immediateSearchAgentHit))).get()
+        logger.info("Write  $immediateSearchAlertHit to the topic $topic")
+        immediateSearchAlertHitProducer.send(ProducerRecord(topic, searchAlert.id.toString(), jsonMapper.writeValueAsString(immediateSearchAlertHit))).get()
 
         await.atMost(Duration.ofSeconds(10)).until { emailsSent.size == 1 }
 
-        assertThat(emailsSent[0].searchAgent, equalTo(searchAgent))
+        assertThat(emailsSent[0].searchAlert, equalTo(searchAlert))
         assertThat(emailsSent[0].news, equalTo(news))
 
-        assertThat(cassandraSearchAgentRepository.isProcessingDone(searchAgent.id, news.id), equalTo(true))
+        assertThat(cassandraSearchAlertRepository.isProcessingDone(searchAlert.id, news.id), equalTo(true))
     }
 
 
     @Test
-    fun multipleHitsForTheSameSearchAgent(){
+    fun multipleHitsForTheSameSearchAlert(){
         val news1 = News(
             1L,
             "Early snow this year",
@@ -138,25 +138,25 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         )
 
 
-        val searchAgent = SearchAgent(1L, "news aobout snow", "contact@mail.com")
+        val searchAlert = SearchAlert(1L, "news aobout snow", "contact@mail.com")
 
-        val immediateSearchAgentHit1 = ImmediateSearchAgentHit(searchAgent, news1)
-        val immediateSearchAgentHit2 = ImmediateSearchAgentHit(searchAgent, news2)
+        val immediateSearchAlertHit1 = ImmediateSearchAlertHit(searchAlert, news1)
+        val immediateSearchAlertHit2 = ImmediateSearchAlertHit(searchAlert, news2)
 
-        logger.info("Write  $immediateSearchAgentHit1 to the topic $topic")
-        immediateSearchAgentHitProducer.send(ProducerRecord(topic, searchAgent.id.toString(), jsonMapper.writeValueAsString(immediateSearchAgentHit1))).get()
-        logger.info("Write  $immediateSearchAgentHit2 to the topic $topic")
-        immediateSearchAgentHitProducer.send(ProducerRecord(topic, searchAgent.id.toString(), jsonMapper.writeValueAsString(immediateSearchAgentHit2))).get()
+        logger.info("Write  $immediateSearchAlertHit1 to the topic $topic")
+        immediateSearchAlertHitProducer.send(ProducerRecord(topic, searchAlert.id.toString(), jsonMapper.writeValueAsString(immediateSearchAlertHit1))).get()
+        logger.info("Write  $immediateSearchAlertHit2 to the topic $topic")
+        immediateSearchAlertHitProducer.send(ProducerRecord(topic, searchAlert.id.toString(), jsonMapper.writeValueAsString(immediateSearchAlertHit2))).get()
 
         await.atMost(Duration.ofSeconds(10)).until { emailsSent.size == 2 }
 
-        assertThat(emailsSent[0].searchAgent, equalTo(searchAgent))
+        assertThat(emailsSent[0].searchAlert, equalTo(searchAlert))
         assertThat(emailsSent[0].news, equalTo(news1))
-        assertThat(emailsSent[1].searchAgent, equalTo(searchAgent))
+        assertThat(emailsSent[1].searchAlert, equalTo(searchAlert))
         assertThat(emailsSent[1].news, equalTo(news2))
 
-        assertThat(cassandraSearchAgentRepository.isProcessingDone(searchAgent.id, news1.id), equalTo(true))
-        assertThat(cassandraSearchAgentRepository.isProcessingDone(searchAgent.id, news2.id), equalTo(true))
+        assertThat(cassandraSearchAlertRepository.isProcessingDone(searchAlert.id, news1.id), equalTo(true))
+        assertThat(cassandraSearchAlertRepository.isProcessingDone(searchAlert.id, news2.id), equalTo(true))
 
     }
 
@@ -229,7 +229,7 @@ class ImmediateSearchAgentHitProcessorTaskTest {
 
     fun truncateCassandraTables(){
         cassandraContainer.cluster.connect().use { session ->
-            session.execute(TRUNCATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_TABLE)
+            session.execute(TRUNCATE_SEARCH_ALERT_PROCESSED_NEWS_TABLE_TABLE)
         }
     }
 
@@ -244,16 +244,16 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         private const val CREATE_DEMO_KEYSPACE_DDL = "CREATE KEYSPACE DEMO \n" +
                 "WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1 }"
 
-        private const val CREATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_DDL =
-            "CREATE TABLE DEMO.SEARCH_AGENT_PROCESSED_NEWS (\n" +
-                    "search_agent_id BIGINT,\n" +
+        private const val CREATE_SEARCH_ALERT_PROCESSED_NEWS_TABLE_DDL =
+            "CREATE TABLE DEMO.SEARCH_ALERT_PROCESSED_NEWS (\n" +
+                    "search_alert_id BIGINT,\n" +
                     "news_id BIGINT,\n" +
                     "processing_date TIMESTAMP,\n" +
-                    "PRIMARY KEY (search_agent_id, news_id)\n" +
+                    "PRIMARY KEY (search_alert_id, news_id)\n" +
                     ") WITH default_time_to_live = 259200;\n" // 3 days should be enough for keeping record of the processed news
 
-        private const val TRUNCATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_TABLE =
-            "TRUNCATE TABLE DEMO.SEARCH_AGENT_PROCESSED_NEWS"
+        private const val TRUNCATE_SEARCH_ALERT_PROCESSED_NEWS_TABLE_TABLE =
+            "TRUNCATE TABLE DEMO.SEARCH_ALERT_PROCESSED_NEWS"
 
         @Container
         val cassandraContainer = SpecifiedCassandraContainer("cassandra:3.11")
@@ -263,7 +263,7 @@ class ImmediateSearchAgentHitProcessorTaskTest {
         internal fun setupCassandra() {
             cassandraContainer.cluster.connect().use { session ->
                 session.execute(CREATE_DEMO_KEYSPACE_DDL)
-                session.execute(CREATE_SEARCH_AGENT_PROCESSED_NEWS_TABLE_DDL)
+                session.execute(CREATE_SEARCH_ALERT_PROCESSED_NEWS_TABLE_DDL)
 
             }
         }

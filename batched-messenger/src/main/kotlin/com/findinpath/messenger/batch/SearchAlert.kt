@@ -1,5 +1,5 @@
-package com.findinpath.messenger.immediate
+package com.findinpath.messenger.batch
 
-data class SearchAgent(val id: Long,
+data class SearchAlert(val id: Long,
                        val name:String,
                        val email: String)

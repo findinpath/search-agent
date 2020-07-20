@@ -13,16 +13,16 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Properties
 
-class ImmediateSearchAgentHitProcessorTask(kafkaBootstrapServers: String,
+class ImmediateSearchAlertHitProcessorTask(kafkaBootstrapServers: String,
                                            private val emailService: EmailService,
-                                           private val searchAgentRepository: SearchAgentRepository,
+                                           private val searchAlertRepository: SearchAlertRepository,
                                            val topic: String,
-                                           searchAgentHitConsumerGroupId: String = CONSUMER_GROUP_ID
+                                           searchAlertHitConsumerGroupId: String = CONSUMER_GROUP_ID
 ): Runnable{
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
-    private val searchAgentHitConsumer = createConsumer(kafkaBootstrapServers, searchAgentHitConsumerGroupId)
+    private val searchAlertHitConsumer = createConsumer(kafkaBootstrapServers, searchAlertHitConsumerGroupId)
 
     private var stopping: Boolean = false
     var partitionsAssigned: Boolean = false
@@ -43,9 +43,9 @@ class ImmediateSearchAgentHitProcessorTask(kafkaBootstrapServers: String,
 
 
     override fun run() {
-        searchAgentHitConsumer.subscribe(listOf(topic) , object: ConsumerRebalanceListener {
+        searchAlertHitConsumer.subscribe(listOf(topic) , object: ConsumerRebalanceListener {
             override fun onPartitionsAssigned(partitions: MutableCollection<TopicPartition>?) {
-                logger.info("Partitions ${partitions} for the topic ${topic} were assigned on the search agent hit task")
+                logger.info("Partitions ${partitions} for the topic ${topic} were assigned on the search alert hit task")
                 partitionsAssigned = true
             }
 
@@ -55,29 +55,29 @@ class ImmediateSearchAgentHitProcessorTask(kafkaBootstrapServers: String,
 
 
         while (!stopping) {
-            val records = searchAgentHitConsumer.poll(Duration.ofSeconds(1))
-            logger.info("Received ${records.count()} search agent hit records")
+            val records = searchAlertHitConsumer.poll(Duration.ofSeconds(1))
+            logger.info("Received ${records.count()} search alert hit records")
 
             records.iterator().forEach {
-                val searchAgentHitJson = it.value()
-                var searchAgentHit: ImmediateSearchAgentHit? = null
+                val searchAlertHitJson = it.value()
+                var searchAlertHit: ImmediateSearchAlertHit? = null
                 try {
-                    searchAgentHit = jsonMapper.readValue(searchAgentHitJson, ImmediateSearchAgentHit::class.java)
+                    searchAlertHit = jsonMapper.readValue(searchAlertHitJson, ImmediateSearchAlertHit::class.java)
                 }catch(e:Exception){
-                    logger.error("Exception occurred while deserializing JSON content $searchAgentHitJson", e)
+                    logger.error("Exception occurred while deserializing JSON content $searchAlertHitJson", e)
 
                 }
-                if (searchAgentHit != null) {
+                if (searchAlertHit != null) {
                     try {
-                        process(searchAgentHit)
+                        process(searchAlertHit)
                     }catch(e:Exception){
-                        logger.error("Exception occurred while processing search agent hit $searchAgentHit", e)
+                        logger.error("Exception occurred while processing search alert hit $searchAlertHit", e)
                     }
                 }
             }
 
             try {
-                searchAgentHitConsumer.commitSync();
+                searchAlertHitConsumer.commitSync();
             } catch (e: CommitFailedException) {
                 logger.error("Commit of the Apache Kafka offset failed", e)
             }
@@ -85,25 +85,25 @@ class ImmediateSearchAgentHitProcessorTask(kafkaBootstrapServers: String,
 
     }
 
-    fun process(searchAgentHit: ImmediateSearchAgentHit){
-        if (searchAgentRepository.isProcessingDone(searchAgentHit.searchAgent.id, searchAgentHit.news.id)){
+    fun process(searchAlertHit: ImmediateSearchAlertHit){
+        if (searchAlertRepository.isProcessingDone(searchAlertHit.searchAlert.id, searchAlertHit.news.id)){
             // avoid sending duplicate messages (in case of failures on the percolator side)
             return
         }
 
-        emailService.sendEmail(EmailDetails(searchAgentHit.searchAgent, searchAgentHit.news))
+        emailService.sendEmail(EmailDetails(searchAlertHit.searchAlert, searchAlertHit.news))
 
-        searchAgentRepository.markAsProcessed(searchAgentHit.searchAgent.id, searchAgentHit.news.id, Instant.now())
+        searchAlertRepository.markAsProcessed(searchAlertHit.searchAlert.id, searchAlertHit.news.id, Instant.now())
     }
 
     fun stop() {
-        logger.info("Stopping ImmediateSearchAgentHitProcessorTask")
+        logger.info("Stopping ImmediateSearchAlertHitProcessorTask")
         stopping = true
-        searchAgentHitConsumer.wakeup()
+        searchAlertHitConsumer.wakeup()
     }
 
 
     companion object{
-        val CONSUMER_GROUP_ID = "search-agent-hit-processor"
+        val CONSUMER_GROUP_ID = "search-alert-hit-processor"
     }
 }

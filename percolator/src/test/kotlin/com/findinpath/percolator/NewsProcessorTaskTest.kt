@@ -110,11 +110,11 @@ class NewsProcessorTaskTest {
     }
 
     @Test
-    fun immediateSearchAgentNotificationDemo() {
-        val searchAgentId = 1L
-        val searchAgentEmail = "contact@mail.com"
+    fun immediateSearchAlertNotificationDemo() {
+        val searchAlertId = 1L
+        val searchAlertEmail = "contact@mail.com"
         getClient(elasticsearchContainer).use { client ->
-            indexNewsNotifyDocument(client, searchAgentId, searchAgentEmail, Frequency.IMMEDIATE, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlertId, searchAlertEmail, Frequency.IMMEDIATE, "snow", "weather")
         }
 
         val news = News(
@@ -129,24 +129,24 @@ class NewsProcessorTaskTest {
         newsProducer.send(ProducerRecord(newsTopic, jsonMapper.writeValueAsString(news))).get()
 
 
-        val searchAgentHits = dumpTopics(kafkaContainer.bootstrapServers, listOf("immediate"), 1)
-        println(searchAgentHits)
-        assertThat(searchAgentHits.size, equalTo(1))
-        assertThat(searchAgentHits[0].key, equalTo(searchAgentId.toString()))
-        val searchAgentHit = jsonMapper.readValue(searchAgentHits[0].value, SearchAgentHit::class.java)
-        assertThat(searchAgentHit, equalTo(SearchAgentHit(news.id, searchAgentId, searchAgentEmail, Frequency.IMMEDIATE, searchAgentHit.searchAgentQuery, searchAgentHit.instant)))
+        val searchAlertHits = dumpTopics(kafkaContainer.bootstrapServers, listOf("immediate"), 1)
+        println(searchAlertHits)
+        assertThat(searchAlertHits.size, equalTo(1))
+        assertThat(searchAlertHits[0].key, equalTo(searchAlertId.toString()))
+        val searchAlertHit = jsonMapper.readValue(searchAlertHits[0].value, SearchAlertHit::class.java)
+        assertThat(searchAlertHit, equalTo(SearchAlertHit(news.id, searchAlertId, searchAlertEmail, Frequency.IMMEDIATE, searchAlertHit.searchAlertQuery, searchAlertHit.instant)))
     }
 
 
     @Test
-    fun immediateSearchAgentNotificationMultipleHits() {
-        val searchAgent1Id = 1L
-        val searchAgent1Email = "contact@mail1.com"
-        val searchAgent2Id = 2L
-        val searchAgent2Email = "contact@mail2.com"
+    fun immediateSearchAlertNotificationMultipleHits() {
+        val searchAlert1Id = 1L
+        val searchAlert1Email = "contact@mail1.com"
+        val searchAlert2Id = 2L
+        val searchAlert2Email = "contact@mail2.com"
         getClient(elasticsearchContainer).use { client ->
-            indexNewsNotifyDocument(client, searchAgent1Id, searchAgent1Email, Frequency.IMMEDIATE, "snow", "weather")
-            indexNewsNotifyDocument(client, searchAgent2Id, searchAgent2Email, Frequency.IMMEDIATE, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlert1Id, searchAlert1Email, Frequency.IMMEDIATE, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlert2Id, searchAlert2Email, Frequency.IMMEDIATE, "snow", "weather")
         }
 
         val news = News(
@@ -161,14 +161,14 @@ class NewsProcessorTaskTest {
         newsProducer.send(ProducerRecord(newsTopic, jsonMapper.writeValueAsString(news))).get()
 
 
-        val searchAgentHits = dumpTopics(kafkaContainer.bootstrapServers, listOf("immediate"), 2)
-        println(searchAgentHits)
-        assertThat(searchAgentHits.size, equalTo(2))
-        assertThat(searchAgentHits.map(KeyValue<String, String>::key), equalTo(listOf(searchAgent1Id.toString(), searchAgent2Id.toString())))
+        val searchAlertHits = dumpTopics(kafkaContainer.bootstrapServers, listOf("immediate"), 2)
+        println(searchAlertHits)
+        assertThat(searchAlertHits.size, equalTo(2))
+        assertThat(searchAlertHits.map(KeyValue<String, String>::key), equalTo(listOf(searchAlert1Id.toString(), searchAlert2Id.toString())))
     }
 
     @Test
-    fun hourlySearchAgentNotificationDemo() {
+    fun hourlySearchAlertNotificationDemo() {
         getClient(elasticsearchContainer).use { client ->
             indexNewsNotifyDocument(client, 1L, "contact@mail.com",  Frequency.HOURLY, "snow", "weather")
         }
@@ -185,14 +185,14 @@ class NewsProcessorTaskTest {
         newsProducer.send(ProducerRecord(newsTopic, jsonMapper.writeValueAsString(news))).get()
 
 
-        val searchAgentHits = dumpTopics(kafkaContainer.bootstrapServers, listOf(next1HourTopic, next2HourTopic), 1)
-        println(searchAgentHits)
-        assertThat(searchAgentHits.size, equalTo(1))
+        val searchAlertHits = dumpTopics(kafkaContainer.bootstrapServers, listOf(next1HourTopic, next2HourTopic), 1)
+        println(searchAlertHits)
+        assertThat(searchAlertHits.size, equalTo(1))
     }
 
 
     @Test
-    fun dailySearchAgentNotificationDemo() {
+    fun dailySearchAlertNotificationDemo() {
         getClient(elasticsearchContainer).use { client ->
             indexNewsNotifyDocument(client, 1L, "contact@mail.com", Frequency.DAILY, "snow", "weather")
         }
@@ -209,9 +209,9 @@ class NewsProcessorTaskTest {
         newsProducer.send(ProducerRecord(newsTopic, jsonMapper.writeValueAsString(news))).get()
 
 
-        val searchAgentHits = dumpTopics(kafkaContainer.bootstrapServers, listOf(next1DayTopic, next2DayTopic), 1)
-        println(searchAgentHits)
-        assertThat(searchAgentHits.size, equalTo(1))
+        val searchAlertHits = dumpTopics(kafkaContainer.bootstrapServers, listOf(next1DayTopic, next2DayTopic), 1)
+        println(searchAlertHits)
+        assertThat(searchAlertHits.size, equalTo(1))
     }
 
 

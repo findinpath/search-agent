@@ -21,12 +21,12 @@ import java.util.Properties
 class NewsProcessorTask(kafkaBootstrapServers: String,
                         elasticHosts: List<HttpHost>,
                         val newsConsumerGroupId: String = CONSUMER_GROUP_ID,
-                        val percolationPageSize: Int = SearchAgentPercolator.PAGE_SIZE) : Runnable {
+                        val percolationPageSize: Int = SearchAlertPercolator.PAGE_SIZE) : Runnable {
 
     private val logger = LoggerFactory.getLogger(javaClass)
     private val newsConsumer = createConsumer(kafkaBootstrapServers)
-    private val searchAgentHitProducer = createProducer(kafkaBootstrapServers)
-    private val searchAgentPercolator = SearchAgentPercolator(elasticHosts)
+    private val searchAlertHitProducer = createProducer(kafkaBootstrapServers)
+    private val searchAlertPercolator = SearchAlertPercolator(elasticHosts)
     private var stopping: Boolean = false
     var partitionsAssigned: Boolean = false
         get() = field
@@ -62,7 +62,7 @@ class NewsProcessorTask(kafkaBootstrapServers: String,
             }
         })
 
-        logger.info("Consuming news for notifying search agents")
+        logger.info("Consuming news for notifying search alerts")
 
         while (!stopping) {
             val records = newsConsumer.poll(Duration.ofSeconds(1))
@@ -100,42 +100,42 @@ class NewsProcessorTask(kafkaBootstrapServers: String,
         logger.info("Stopping NewsProcessorTask")
         stopping = true
         newsConsumer.wakeup()
-        searchAgentHitProducer.close(Duration.ofMillis(100))
+        searchAlertHitProducer.close(Duration.ofMillis(100))
     }
 
     fun process(news: News) {
         var lastHitDocId: Long? = null
         do {
-            val response = searchAgentPercolator.percolate(news, lastHitDocId, percolationPageSize)
+            val response = searchAlertPercolator.percolate(news, lastHitDocId, percolationPageSize)
 
             if (response.hits.hits.isNotEmpty()) {
-                logger.info("Retrieved ${response.hits.hits.size} hits from the search agent percolator for the news ${news.id}")
+                logger.info("Retrieved ${response.hits.hits.size} hits from the search alert percolator for the news ${news.id}")
                 response.hits.hits.forEach { hit ->
                     val hitJson = JSONObject(hit.sourceAsString)
 
-                    val searchAgentId = hit.id.toLong()
+                    val searchAlertId = hit.id.toLong()
                     val query = hitJson.get("query").toString()
                     val email = hitJson.get("email").toString()
                     val frequency = Frequency.valueOf(hitJson.get("frequency").toString())
 
                     val now = Instant.now()
-                    val searchAgentHit = SearchAgentHit(news.id, searchAgentId, email, frequency, query, now)
+                    val searchAlertHit = SearchAlertHit(news.id, searchAlertId, email, frequency, query, now)
 
                     // produce stuff
-                    // write to Kafka the search agent info depending on the search agent type : immediate/hourly/daily
+                    // write to Kafka the search alert info depending on the search alert type : immediate/hourly/daily
                     val topic = when (frequency) {
                         Frequency.IMMEDIATE -> immediateTopic
                         Frequency.HOURLY -> getNextHourTopic(now)
                         Frequency.DAILY -> getNextDayTopic(now)
                     }
                     logger.info("Sending to $topic the hit with ID ${hit.id}")
-                    searchAgentHitProducer
-                        .send(ProducerRecord(topic, hit.id, jsonMapper.writeValueAsString(searchAgentHit)))
+                    searchAlertHitProducer
+                        .send(ProducerRecord(topic, hit.id, jsonMapper.writeValueAsString(searchAlertHit)))
                         .get() // wait for the write acknowledgement
                 }
             }
 
-            if (response.hits.hits.size == SearchAgentPercolator.PAGE_SIZE) {
+            if (response.hits.hits.size == SearchAlertPercolator.PAGE_SIZE) {
                 // get the next page
 
                 val lastHit = response.hits.hits[response.hits.hits.size - 1]
@@ -145,7 +145,7 @@ class NewsProcessorTask(kafkaBootstrapServers: String,
             //TODO maybe save record partition, offset, lasthitdoc id in Cassandra
             // in order to avoid sending duplicates (e.g.: once per percolated batch)
 
-        } while (response.hits.hits.size == SearchAgentPercolator.PAGE_SIZE)
+        } while (response.hits.hits.size == SearchAlertPercolator.PAGE_SIZE)
     }
 
 

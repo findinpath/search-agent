@@ -1,8 +1,8 @@
 package com.findinpath.messenger.batch
 
 import com.datastax.driver.core.Session
-import com.findinpath.messenger.batch.BatchedSearchAgentHitProcessorTask.Companion.NEWS_INDEX
-import com.findinpath.messenger.batch.BatchedSearchAgentHitProcessorTask.Companion.NEWS_NOTIFY_INDEX
+import com.findinpath.messenger.batch.BatchedSearchAlertHitProcessorTask.Companion.NEWS_INDEX
+import com.findinpath.messenger.batch.BatchedSearchAlertHitProcessorTask.Companion.NEWS_NOTIFY_INDEX
 import org.apache.http.HttpHost
 import org.apache.kafka.clients.CommonClientConfigs
 import org.apache.kafka.clients.admin.AdminClient
@@ -50,7 +50,7 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 @Testcontainers
-class BatchedSearchAgentHitProcessorTaskTest {
+class BatchedSearchAlertHitProcessorTaskTest {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
@@ -59,13 +59,13 @@ class BatchedSearchAgentHitProcessorTaskTest {
 
     private lateinit var emailsSent : MutableList<EmailDetails>
 
-    private lateinit var batchedSearchAgentHitProducer: Producer<String, String>
+    private lateinit var batchedSearchAlertHitProducer: Producer<String, String>
 
-    private lateinit var batchedSearchAgentHitProcessorTask: BatchedSearchAgentHitProcessorTask
+    private lateinit var batchedSearchAlertHitProcessorTask: BatchedSearchAlertHitProcessorTask
 
     private lateinit var cassandraSession: Session
 
-    private lateinit var cassandraSearchAgentRepository: CassandraSearchAgentRepository
+    private lateinit var cassandraSearchAlertRepository: CassandraSearchAlertRepository
 
     private val frequency = Frequency.HOURLY
 
@@ -79,14 +79,14 @@ class BatchedSearchAgentHitProcessorTaskTest {
         topic = "batched-" + UUID.randomUUID().toString()
 
         cassandraSession = cassandraContainer.cluster.connect()
-        cassandraSearchAgentRepository = CassandraSearchAgentRepository(cassandraSession)
+        cassandraSearchAlertRepository = CassandraSearchAlertRepository(cassandraSession)
 
+        truncateCassandraTables()
 
-
-        batchedSearchAgentHitProcessorTask = BatchedSearchAgentHitProcessorTask(
+        batchedSearchAlertHitProcessorTask = BatchedSearchAlertHitProcessorTask(
             kafkaContainer.bootstrapServers,
             listOf(HttpHost.create(elasticsearchContainer.httpHostAddress)),
-            cassandraSearchAgentRepository,
+            cassandraSearchAlertRepository,
             LoggingEmailService { emailDetails -> emailsSent.add(emailDetails) },
             topic,
             frequency,
@@ -97,7 +97,7 @@ class BatchedSearchAgentHitProcessorTaskTest {
 
         createTopic(topic)
 
-        batchedSearchAgentHitProducer = createProducer(kafkaContainer.bootstrapServers)
+        batchedSearchAlertHitProducer = createProducer(kafkaContainer.bootstrapServers)
 
         getClient(elasticsearchContainer).use { client ->
             createNewsIndex(client)
@@ -108,15 +108,15 @@ class BatchedSearchAgentHitProcessorTaskTest {
 
     @AfterEach
     fun tearDown() {
-        if (this::batchedSearchAgentHitProcessorTask.isInitialized) {
-            batchedSearchAgentHitProcessorTask.stop()
+        if (this::batchedSearchAlertHitProcessorTask.isInitialized) {
+            batchedSearchAlertHitProcessorTask.stop()
         }
 
         if (this::cassandraSession.isInitialized){
             cassandraSession.close()
         }
 
-        batchedSearchAgentHitProducer.close(Duration.ofMillis(100))
+        batchedSearchAlertHitProducer.close(Duration.ofMillis(100))
         deleteTopic(topic)
 
     }
@@ -125,64 +125,62 @@ class BatchedSearchAgentHitProcessorTaskTest {
     @Test
     fun stopOnEmptyTopicAccuracy(){
 
-        startBatchedSearchAgentHitProcessorTask()
-
-        truncateCassandraTables()
+        startBatchedSearchAlertHitProcessorTask()
 
         await.atMost(Duration.ofSeconds(10))
-            .until { batchedSearchAgentHitProcessorTask.isStopping() }
+            .until { batchedSearchAlertHitProcessorTask.isStopping() }
     }
 
 
     @Test
-    fun noEmailsShouldBeSentWhenTheSearchAgentHasBeenRemovedFromTheNewsNotifyIndex(){
+    fun noEmailsShouldBeSentWhenTheSearchAlertHasBeenRemovedFromTheNewsNotifyIndex(){
         val newsId = 1L
-        val searchAgentId = 1L
+        val searchAlertId = 1L
 
-        val batchedSearchAgentHit = BatchedSearchAgentHit(searchAgentId, newsId)
+        val batchedSearchAlertHit = BatchedSearchAlertHit(searchAlertId, newsId)
 
-        logger.info("Write  $batchedSearchAgentHit to the topic $topic")
-        batchedSearchAgentHitProducer
-            .send(ProducerRecord(topic, searchAgentId.toString(), jsonMapper.writeValueAsString(batchedSearchAgentHit)))
+        logger.info("Write  $batchedSearchAlertHit to the topic $topic")
+        batchedSearchAlertHitProducer
+            .send(ProducerRecord(topic, searchAlertId.toString(), jsonMapper.writeValueAsString(batchedSearchAlertHit)))
             .get()
 
-        startBatchedSearchAgentHitProcessorTask()
+        startBatchedSearchAlertHitProcessorTask()
 
         await.atMost(Duration.ofSeconds(10))
-            .until { batchedSearchAgentHitProcessorTask.isStopping() }
+            .until { batchedSearchAlertHitProcessorTask.isStopping() }
 
         assertThat(emailsSent.size, equalTo(0))
     }
 
 
     @Test
-    fun noEmailsShouldBeSentWhenTheSearchAgentHasNoHits(){
+    fun noEmailsShouldBeSentWhenTheSearchAlertHasNoHits(){
         val newsId = 1L
-        val searchAgentId = 1L
+        val searchAlertId = 1L
 
         getClient(elasticsearchContainer).use { client ->
-            indexNewsNotifyDocument(client, searchAgentId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlertId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
         }
 
-        val batchedSearchAgentHit = BatchedSearchAgentHit(searchAgentId, newsId)
+        val batchedSearchAlertHit = BatchedSearchAlertHit(searchAlertId, newsId)
 
-        logger.info("Write  $batchedSearchAgentHit to the topic $topic")
-        batchedSearchAgentHitProducer
-            .send(ProducerRecord(topic, searchAgentId.toString(), jsonMapper.writeValueAsString(batchedSearchAgentHit)))
+        logger.info("Write  $batchedSearchAlertHit to the topic $topic")
+        batchedSearchAlertHitProducer
+            .send(ProducerRecord(topic, searchAlertId.toString(), jsonMapper.writeValueAsString(batchedSearchAlertHit)))
             .get()
 
-        startBatchedSearchAgentHitProcessorTask()
+        startBatchedSearchAlertHitProcessorTask()
 
         await.atMost(Duration.ofSeconds(10))
-            .until { batchedSearchAgentHitProcessorTask.isStopping() }
+            .until { batchedSearchAlertHitProcessorTask.isStopping() }
 
         assertThat(emailsSent.size, equalTo(0))
     }
 
     @Test
-    fun emailShouldBeSentWhenTheSearchAgentHasHits(){
+    fun emailShouldBeSentWhenTheSearchAlertHasHits(){
         val newsId = 1L
-        val searchAgentId = 1L
+        val searchAlertId = 1L
 
         val testStartInstant = Instant.now()
 
@@ -197,39 +195,39 @@ class BatchedSearchAgentHitProcessorTaskTest {
 
         getClient(elasticsearchContainer).use { client ->
             indexNewsDocument(client, news)
-            indexNewsNotifyDocument(client, searchAgentId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlertId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
         }
 
-        val batchedSearchAgentHit = BatchedSearchAgentHit(searchAgentId, newsId)
+        val batchedSearchAlertHit = BatchedSearchAlertHit(searchAlertId, newsId)
 
-        logger.info("Write  $batchedSearchAgentHit to the topic $topic")
-        batchedSearchAgentHitProducer
-            .send(ProducerRecord(topic, searchAgentId.toString(), jsonMapper.writeValueAsString(batchedSearchAgentHit)))
+        logger.info("Write  $batchedSearchAlertHit to the topic $topic")
+        batchedSearchAlertHitProducer
+            .send(ProducerRecord(topic, searchAlertId.toString(), jsonMapper.writeValueAsString(batchedSearchAlertHit)))
             .get()
 
-        startBatchedSearchAgentHitProcessorTask()
+        startBatchedSearchAlertHitProcessorTask()
 
         await.atMost(Duration.ofSeconds(10))
-            .until { batchedSearchAgentHitProcessorTask.isStopping() }
+            .until { batchedSearchAlertHitProcessorTask.isStopping() }
 
         assertThat(emailsSent.size, equalTo(1))
-        assertThat(emailsSent[0].searchAgent.id, equalTo(searchAgentId))
+        assertThat(emailsSent[0].searchAlert.id, equalTo(searchAlertId))
         assertThat(emailsSent[0].newsList.size, equalTo(1))
         assertThat(emailsSent[0].newsList[0].id, equalTo(newsId))
 
-        val processingWindow = cassandraSearchAgentRepository.getLastSearchAgentHitProcessingWindow(searchAgentId, frequency)
+        val processingWindow = cassandraSearchAlertRepository.getLastSearchAlertHitProcessingWindow(searchAlertId, frequency)
         assertThat(processingWindow, equalTo(lastHourFrequencyWindow))
 
-        val lastPublishedDate = cassandraSearchAgentRepository.getSearchAgentLastPublishedDate(searchAgentId)
+        val lastPublishedDate = cassandraSearchAlertRepository.getSearchAlertLastPublishedDate(searchAlertId)
         assertThat(lastPublishedDate, greaterThan(testStartInstant))
     }
 
 
     @Test
-    fun batchEmailShouldBeSentWhenTheSearchAgentHasHits(){
+    fun batchEmailShouldBeSentWhenTheSearchAlertHasHits(){
         val news1Id = 1L
         val news2Id = 2L
-        val searchAgentId = 1L
+        val searchAlertId = 1L
 
         val testStartInstant = Instant.now()
 
@@ -253,40 +251,40 @@ class BatchedSearchAgentHitProcessorTaskTest {
         getClient(elasticsearchContainer).use { client ->
             indexNewsDocument(client, news1)
             indexNewsDocument(client, news2)
-            indexNewsNotifyDocument(client, searchAgentId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlertId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
         }
 
-        val batchedSearchAgentHit = BatchedSearchAgentHit(searchAgentId, news1Id)
+        val batchedSearchAlertHit = BatchedSearchAlertHit(searchAlertId, news1Id)
 
-        logger.info("Write  $batchedSearchAgentHit to the topic $topic")
-        batchedSearchAgentHitProducer
-            .send(ProducerRecord(topic, searchAgentId.toString(), jsonMapper.writeValueAsString(batchedSearchAgentHit)))
+        logger.info("Write  $batchedSearchAlertHit to the topic $topic")
+        batchedSearchAlertHitProducer
+            .send(ProducerRecord(topic, searchAlertId.toString(), jsonMapper.writeValueAsString(batchedSearchAlertHit)))
             .get()
 
-        startBatchedSearchAgentHitProcessorTask()
+        startBatchedSearchAlertHitProcessorTask()
 
         await.atMost(Duration.ofSeconds(10))
-            .until { batchedSearchAgentHitProcessorTask.isStopping() }
+            .until { batchedSearchAlertHitProcessorTask.isStopping() }
 
         assertThat(emailsSent.size, equalTo(1))
-        assertThat(emailsSent[0].searchAgent.id, equalTo(searchAgentId))
+        assertThat(emailsSent[0].searchAlert.id, equalTo(searchAlertId))
         assertThat(emailsSent[0].newsList.size, equalTo(2))
         assertThat(emailsSent[0].newsList.map(News::id), containsInAnyOrder(news1Id, news2Id))
 
-        val processingWindow = cassandraSearchAgentRepository.getLastSearchAgentHitProcessingWindow(searchAgentId, frequency)
+        val processingWindow = cassandraSearchAlertRepository.getLastSearchAlertHitProcessingWindow(searchAlertId, frequency)
         assertThat(processingWindow, equalTo(lastHourFrequencyWindow))
 
-        val lastPublishedDate = cassandraSearchAgentRepository.getSearchAgentLastPublishedDate(searchAgentId)
+        val lastPublishedDate = cassandraSearchAlertRepository.getSearchAlertLastPublishedDate(searchAlertId)
         assertThat(lastPublishedDate, greaterThan(testStartInstant))
     }
 
 
 
     @Test
-    fun noDuplicateEmailsShouldBeSentWhenForBatchedSearchHitsBelongingToTheSameSearchAgent(){
+    fun noDuplicateEmailsShouldBeSentWhenForBatchedSearchHitsBelongingToTheSameSearchAlert(){
         val news1Id = 1L
         val news2Id = 2L
-        val searchAgentId = 1L
+        val searchAlertId = 1L
 
         val testStartInstant = Instant.now()
 
@@ -310,43 +308,43 @@ class BatchedSearchAgentHitProcessorTaskTest {
         getClient(elasticsearchContainer).use { client ->
             indexNewsDocument(client, news1)
             indexNewsDocument(client, news2)
-            indexNewsNotifyDocument(client, searchAgentId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
+            indexNewsNotifyDocument(client, searchAlertId, "news about snow", "contact@mail.com", Frequency.DAILY, "snow", "weather")
         }
 
-        val batchedSearchAgentHit1 = BatchedSearchAgentHit(searchAgentId, news1Id)
-        val batchedSearchAgentHit2 = BatchedSearchAgentHit(searchAgentId, news2Id)
+        val batchedSearchAlertHit1 = BatchedSearchAlertHit(searchAlertId, news1Id)
+        val batchedSearchAlertHit2 = BatchedSearchAlertHit(searchAlertId, news2Id)
 
-        logger.info("Write  $batchedSearchAgentHit1 and $batchedSearchAgentHit2 to the topic $topic")
-        // By using the same partition key (the search agent id) we can ensure that the eventual multipl
-        // batched search agent hits for a search agent are processed sequentially
-        batchedSearchAgentHitProducer
-            .send(ProducerRecord(topic, searchAgentId.toString(), jsonMapper.writeValueAsString(batchedSearchAgentHit1)))
+        logger.info("Write  $batchedSearchAlertHit1 and $batchedSearchAlertHit2 to the topic $topic")
+        // By using the same partition key (the search alert id) we can ensure that the eventual multipl
+        // batched search alert hits for a search alert are processed sequentially
+        batchedSearchAlertHitProducer
+            .send(ProducerRecord(topic, searchAlertId.toString(), jsonMapper.writeValueAsString(batchedSearchAlertHit1)))
             .get()
-        batchedSearchAgentHitProducer
-            .send(ProducerRecord(topic, searchAgentId.toString(), jsonMapper.writeValueAsString(batchedSearchAgentHit2)))
+        batchedSearchAlertHitProducer
+            .send(ProducerRecord(topic, searchAlertId.toString(), jsonMapper.writeValueAsString(batchedSearchAlertHit2)))
             .get()
 
-        startBatchedSearchAgentHitProcessorTask()
+        startBatchedSearchAlertHitProcessorTask()
 
         await.atMost(Duration.ofSeconds(10))
-            .until { batchedSearchAgentHitProcessorTask.isStopping() }
+            .until { batchedSearchAlertHitProcessorTask.isStopping() }
 
         assertThat(emailsSent.size, equalTo(1))
-        assertThat(emailsSent[0].searchAgent.id, equalTo(searchAgentId))
+        assertThat(emailsSent[0].searchAlert.id, equalTo(searchAlertId))
         assertThat(emailsSent[0].newsList.size, equalTo(2))
         assertThat(emailsSent[0].newsList.map(News::id), containsInAnyOrder(news1Id, news2Id))
 
-        val processingWindow = cassandraSearchAgentRepository.getLastSearchAgentHitProcessingWindow(searchAgentId, frequency)
+        val processingWindow = cassandraSearchAlertRepository.getLastSearchAlertHitProcessingWindow(searchAlertId, frequency)
         assertThat(processingWindow, equalTo(lastHourFrequencyWindow))
 
-        val lastPublishedDate = cassandraSearchAgentRepository.getSearchAgentLastPublishedDate(searchAgentId)
+        val lastPublishedDate = cassandraSearchAlertRepository.getSearchAlertLastPublishedDate(searchAlertId)
         assertThat(lastPublishedDate, greaterThan(testStartInstant))
     }
 
 
-    private fun startBatchedSearchAgentHitProcessorTask(){
-        Executors.newCachedThreadPool().submit(batchedSearchAgentHitProcessorTask)
-        await.atMost(Duration.ofSeconds(30)).until { batchedSearchAgentHitProcessorTask.partitionsAssigned }
+    private fun startBatchedSearchAlertHitProcessorTask(){
+        Executors.newCachedThreadPool().submit(batchedSearchAlertHitProcessorTask)
+        await.atMost(Duration.ofSeconds(30)).until { batchedSearchAlertHitProcessorTask.partitionsAssigned }
     }
 
 
@@ -536,8 +534,8 @@ class BatchedSearchAgentHitProcessorTaskTest {
 
     fun truncateCassandraTables(){
         cassandraContainer.cluster.connect().use { session ->
-            session.execute(TRUNCATE_SEARCH_AGENT_LAST_PROCESSING_WINDOW_TABLE)
-            session.execute(TRUNCATE_SEARCH_AGENT_LAST_PUBLISHED_DATE_TABLE)
+            session.execute(TRUNCATE_SEARCH_ALERT_LAST_PROCESSING_WINDOW_TABLE)
+            session.execute(TRUNCATE_SEARCH_ALERT_LAST_PUBLISHED_DATE_TABLE)
         }
     }
 
@@ -548,25 +546,25 @@ class BatchedSearchAgentHitProcessorTaskTest {
         private const val CREATE_DEMO_KEYSPACE_DDL = "CREATE KEYSPACE DEMO \n" +
                 "WITH replication = {'class': 'SimpleStrategy', 'replication_factor': 1 }"
 
-        private const val CREATE_SEARCH_AGENT_LAST_PROCESSING_WINDOW_TABLE_DDL =
-            "CREATE TABLE DEMO.SEARCH_AGENT_LAST_PROCESSING_WINDOW (\n" +
+        private const val CREATE_SEARCH_ALERT_LAST_PROCESSING_WINDOW_TABLE_DDL =
+            "CREATE TABLE DEMO.SEARCH_ALERT_LAST_PROCESSING_WINDOW (\n" +
                     "id BIGINT,\n" +
                     "frequency VARCHAR,\n" +
                     "window TIMESTAMP,\n" +
                     "PRIMARY KEY (id, frequency)\n" +
                     ")\n"
 
-        private const val TRUNCATE_SEARCH_AGENT_LAST_PROCESSING_WINDOW_TABLE =
-            "TRUNCATE TABLE DEMO.SEARCH_AGENT_LAST_PROCESSING_WINDOW"
+        private const val TRUNCATE_SEARCH_ALERT_LAST_PROCESSING_WINDOW_TABLE =
+            "TRUNCATE TABLE DEMO.SEARCH_ALERT_LAST_PROCESSING_WINDOW"
 
-        private const val CREATE_SEARCH_AGENT_LAST_PUBLISHED_DATE_TABLE_DDL =
-            "CREATE TABLE DEMO.SEARCH_AGENT_LAST_PUBLISHED_DATE (\n" +
+        private const val CREATE_SEARCH_ALERT_LAST_PUBLISHED_DATE_TABLE_DDL =
+            "CREATE TABLE DEMO.SEARCH_ALERT_LAST_PUBLISHED_DATE (\n" +
                     "id BIGINT,\n" +
                     "last_published_date TIMESTAMP,\n" +
                     "PRIMARY KEY (id)\n" +
                     ")\n"
-        private const val TRUNCATE_SEARCH_AGENT_LAST_PUBLISHED_DATE_TABLE =
-            "TRUNCATE TABLE DEMO.SEARCH_AGENT_LAST_PUBLISHED_DATE"
+        private const val TRUNCATE_SEARCH_ALERT_LAST_PUBLISHED_DATE_TABLE =
+            "TRUNCATE TABLE DEMO.SEARCH_ALERT_LAST_PUBLISHED_DATE"
 
         /**
          * Elasticsearch version which should be used for the Tests
@@ -588,8 +586,8 @@ class BatchedSearchAgentHitProcessorTaskTest {
         internal fun setupCassandra() {
             cassandraContainer.cluster.connect().use { session ->
                 session.execute(CREATE_DEMO_KEYSPACE_DDL)
-                session.execute(CREATE_SEARCH_AGENT_LAST_PROCESSING_WINDOW_TABLE_DDL)
-                session.execute(CREATE_SEARCH_AGENT_LAST_PUBLISHED_DATE_TABLE_DDL)
+                session.execute(CREATE_SEARCH_ALERT_LAST_PROCESSING_WINDOW_TABLE_DDL)
+                session.execute(CREATE_SEARCH_ALERT_LAST_PUBLISHED_DATE_TABLE_DDL)
 
             }
         }

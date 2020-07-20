@@ -6,9 +6,9 @@ import java.time.Instant
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
-class BatchedSearchAgentHitProcessor(val kafkaBootstrapServers: String,
+class BatchedSearchAlertHitProcessor(val kafkaBootstrapServers: String,
                                      val elasticHosts: List<HttpHost>,
-                                     val searchAgentRepository: SearchAgentRepository,
+                                     val searchAlertRepository: SearchAlertRepository,
                                      val emailService: EmailService,
                                      val tasks: Int,
                                      val topic: String,
@@ -22,10 +22,10 @@ class BatchedSearchAgentHitProcessor(val kafkaBootstrapServers: String,
     fun start() {
         (1..tasks).forEach {
             executorService.submit(
-                BatchedSearchAgentHitProcessorTask(
+                BatchedSearchAlertHitProcessorTask(
                     kafkaBootstrapServers,
                     elasticHosts,
-                    searchAgentRepository,
+                    searchAlertRepository,
                     emailService,
                     topic,
                     frequency,

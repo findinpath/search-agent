@@ -4,9 +4,9 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 
-class ImmediateSearchAgentHitProcessor(val kafkaBootstrapServers: String,
+class ImmediateSearchAlertHitProcessor(val kafkaBootstrapServers: String,
                                        val emailService: EmailService,
-                                       val searchAgentRepository: SearchAgentRepository,
+                                       val searchAlertRepository: SearchAlertRepository,
                                        val tasks: Int,
                                        val topic: String) {
     private val logger = LoggerFactory.getLogger(javaClass)
@@ -17,10 +17,10 @@ class ImmediateSearchAgentHitProcessor(val kafkaBootstrapServers: String,
     fun start() {
         (1..tasks).forEach {
             executorService.submit(
-                ImmediateSearchAgentHitProcessorTask(
+                ImmediateSearchAlertHitProcessorTask(
                     kafkaBootstrapServers,
                     emailService,
-                    searchAgentRepository,
+                    searchAlertRepository,
                     topic
                 )
             )

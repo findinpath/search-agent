@@ -38,24 +38,24 @@ import java.util.Properties
 
 /**
  *
- * @param frequency the frequency for the search agents (e.g. : hourly, daily)
+ * @param frequency the frequency for the search alerts (e.g. : hourly, daily)
  * @param frequencyWindow the begin of the frequency window (hour/day)
  */
-class BatchedSearchAgentHitProcessorTask(
+class BatchedSearchAlertHitProcessorTask(
     kafkaBootstrapServers: String,
     elasticHosts: List<HttpHost>,
-    val searchAgentRepository: SearchAgentRepository,
+    val searchAlertRepository: SearchAlertRepository,
     val emailService: EmailService,
     val topic: String,
     val frequency: Frequency,
     val frequencyWindow: Instant,
-    searchAgentHitConsumerGroupId: String = CONSUMER_GROUP_ID
+    searchAlertHitConsumerGroupId: String = CONSUMER_GROUP_ID
 ) : Runnable {
 
     private val logger = LoggerFactory.getLogger(javaClass)
 
 
-    private val searchAgentHitConsumer = createConsumer(kafkaBootstrapServers, searchAgentHitConsumerGroupId)
+    private val searchAlertHitConsumer = createConsumer(kafkaBootstrapServers, searchAlertHitConsumerGroupId)
 
     val elasticClient = RestHighLevelClient(RestClient.builder(*elasticHosts.toTypedArray()))
 
@@ -78,9 +78,9 @@ class BatchedSearchAgentHitProcessorTask(
 
 
     override fun run() {
-        searchAgentHitConsumer.subscribe(listOf(topic), object : ConsumerRebalanceListener {
+        searchAlertHitConsumer.subscribe(listOf(topic), object : ConsumerRebalanceListener {
             override fun onPartitionsAssigned(partitions: MutableCollection<TopicPartition>?) {
-                logger.info("Partitions ${partitions} for the topic ${topic} were assigned on the search agent hit task")
+                logger.info("Partitions ${partitions} for the topic ${topic} were assigned on the search alert hit task")
                 partitionsAssigned = true
             }
 
@@ -90,14 +90,14 @@ class BatchedSearchAgentHitProcessorTask(
 
 
         while (!stopping) {
-            val records = searchAgentHitConsumer.poll(Duration.ofSeconds(1))
-            logger.info("Received ${records.count()} search agent hit records")
+            val records = searchAlertHitConsumer.poll(Duration.ofSeconds(1))
+            logger.info("Received ${records.count()} search alert hit records")
 
 
             if (records.isEmpty) {
-                val topicPartitions = searchAgentHitConsumer.assignment()
-                val endOffsets = searchAgentHitConsumer.endOffsets(topicPartitions)
-                val currentOffsets = topicPartitions.map { it to searchAgentHitConsumer.position(it) }.toMap()
+                val topicPartitions = searchAlertHitConsumer.assignment()
+                val endOffsets = searchAlertHitConsumer.endOffsets(topicPartitions)
+                val currentOffsets = topicPartitions.map { it to searchAlertHitConsumer.position(it) }.toMap()
 
                 val isConsumerAndTheEndOfTheTopic = endOffsets.entries
                     .all { (topicPartition, endOffset) -> endOffset == currentOffsets.get(topicPartition) }
@@ -110,25 +110,25 @@ class BatchedSearchAgentHitProcessorTask(
             }
 
             records.iterator().forEach {
-                val searchAgentHitJson = it.value()
-                var searchAgentHit: BatchedSearchAgentHit? = null
+                val searchAlertHitJson = it.value()
+                var searchAlertHit: BatchedSearchAlertHit? = null
                 try {
-                    searchAgentHit = jsonMapper.readValue(searchAgentHitJson, BatchedSearchAgentHit::class.java)
+                    searchAlertHit = jsonMapper.readValue(searchAlertHitJson, BatchedSearchAlertHit::class.java)
                 } catch (e: Exception) {
-                    logger.error("Exception occurred while deserializing JSON content $searchAgentHitJson", e)
+                    logger.error("Exception occurred while deserializing JSON content $searchAlertHitJson", e)
 
                 }
-                if (searchAgentHit != null) {
+                if (searchAlertHit != null) {
                     try {
-                        process(searchAgentHit)
+                        process(searchAlertHit)
                     } catch (e: Exception) {
-                        logger.error("Exception occurred while processing search agent hit $searchAgentHit", e)
+                        logger.error("Exception occurred while processing search alert hit $searchAlertHit", e)
                     }
                 }
             }
 
             try {
-                searchAgentHitConsumer.commitSync();
+                searchAlertHitConsumer.commitSync();
             } catch (e: CommitFailedException) {
                 logger.error("Commit of the Apache Kafka offset failed", e)
             }
@@ -136,49 +136,49 @@ class BatchedSearchAgentHitProcessorTask(
 
     }
 
-    fun process(searchAgentHit: BatchedSearchAgentHit) {
-        val searchAgentId = searchAgentHit.searchAgentId
+    fun process(searchAlertHit: BatchedSearchAlertHit) {
+        val searchAlertId = searchAlertHit.searchAlertId
         val lastProcessedFrequencyWindow =
-            searchAgentRepository.getLastSearchAgentHitProcessingWindow(searchAgentId, frequency)
+            searchAlertRepository.getLastSearchAlertHitProcessingWindow(searchAlertId, frequency)
 
         if (lastProcessedFrequencyWindow != null &&
             (lastProcessedFrequencyWindow.equals(frequencyWindow) || lastProcessedFrequencyWindow.isAfter(
                 frequencyWindow
             ))
         ) {
-            // avoid sending duplicate emails for the search agent in this frequency window.
+            // avoid sending duplicate emails for the search alert in this frequency window.
             return
         }
 
-        // retrieve from elastic the search agent details
-        val searchAgentGetRequest = GetRequest("news-notify", searchAgentHit.searchAgentId.toString())
-        val searchAgentGetResponse = elasticClient.get(searchAgentGetRequest, RequestOptions.DEFAULT)
-        if (!searchAgentGetResponse.isExists){
-            logger.info("The search agent ${searchAgentId} has been removed from the $NEWS_NOTIFY_INDEX index so no further processing needed.")
+        // retrieve from elastic the search alert details
+        val searchAlertGetRequest = GetRequest("news-notify", searchAlertHit.searchAlertId.toString())
+        val searchAlertGetResponse = elasticClient.get(searchAlertGetRequest, RequestOptions.DEFAULT)
+        if (!searchAlertGetResponse.isExists){
+            logger.info("The search alert ${searchAlertId} has been removed from the $NEWS_NOTIFY_INDEX index so no further processing needed.")
             return
         }
 
-        val searchAgent = createSearchAgent(searchAgentGetResponse)
+        val searchAlert = createSearchAlert(searchAlertGetResponse)
 
 
-        // retrieve the actual news for the search agent configured query
-        val source = searchAgentGetResponse.sourceAsString
+        // retrieve the actual news for the search alert configured query
+        val source = searchAlertGetResponse.sourceAsString
         val sourceJson = JSONObject(source)
-        val searchAgentQueryBuilder = parseQuery(sourceJson.get("query").toString())
+        val searchAlertQueryBuilder = parseQuery(sourceJson.get("query").toString())
 
-        val lastSearchedPublishedDate = searchAgentRepository
-            .getSearchAgentLastPublishedDate(searchAgentHit.searchAgentId)
+        val lastSearchedPublishedDate = searchAlertRepository
+            .getSearchAlertLastPublishedDate(searchAlertHit.searchAlertId)
             ?: frequencyWindow
 
         // add published date filter with latest search date retrieved from Cassandra
-        // we assume that all the search agents are configured as boolean queries
+        // we assume that all the search alerts are configured as boolean queries
         // see https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-bool-query.html
-        (searchAgentQueryBuilder as BoolQueryBuilder)
+        (searchAlertQueryBuilder as BoolQueryBuilder)
             .filter(rangeQuery("published_date").gt(Date.from(lastSearchedPublishedDate)))
 
         val newsSearchRequest = SearchRequest("news")
         val newsSourceBuilder = SearchSourceBuilder()
-        newsSourceBuilder.query(searchAgentQueryBuilder)
+        newsSourceBuilder.query(searchAlertQueryBuilder)
         // retrieve the latest news
         newsSourceBuilder.sort(FieldSortBuilder("published_date").order(SortOrder.DESC))
         val updatedLastSearchedPublishedDate = Instant.now()
@@ -193,12 +193,12 @@ class BatchedSearchAgentHitProcessorTask(
                 .hits.hits
                 .map(this::createNews)
 
-            emailService.sendEmail(EmailDetails(searchAgent, newsList))
+            emailService.sendEmail(EmailDetails(searchAlert, newsList))
 
         }
 
-        searchAgentRepository.setSearchAgentLastPublishedDate(searchAgentId, updatedLastSearchedPublishedDate)
-        searchAgentRepository.setLastSearchAgentHitProcessingWindow(searchAgentId, frequency, frequencyWindow)
+        searchAlertRepository.setSearchAlertLastPublishedDate(searchAlertId, updatedLastSearchedPublishedDate)
+        searchAlertRepository.setLastSearchAlertHitProcessingWindow(searchAlertId, frequency, frequencyWindow)
     }
 
     fun createNews(searchHit: SearchHit): News {
@@ -212,19 +212,19 @@ class BatchedSearchAgentHitProcessorTask(
     }
 
 
-    fun createSearchAgent(searchAgentGetResponse: GetResponse): SearchAgent {
-        val source = searchAgentGetResponse.sourceAsString
+    fun createSearchAlert(searchAlertGetResponse: GetResponse): SearchAlert {
+        val source = searchAlertGetResponse.sourceAsString
         val sourceJson = JSONObject(source)
         val name = sourceJson.get("name") as String
         val email = sourceJson.get("email") as String
 
-        return SearchAgent(searchAgentGetResponse.id.toLong(), name, email)
+        return SearchAlert(searchAlertGetResponse.id.toLong(), name, email)
     }
 
     fun stop() {
-        logger.info("Stopping SearchAgentHitProcessorTask")
+        logger.info("Stopping SearchAlertHitProcessorTask")
         stopping = true
-        searchAgentHitConsumer.wakeup()
+        searchAlertHitConsumer.wakeup()
     }
 
     fun isStopping(): Boolean {
@@ -242,7 +242,7 @@ class BatchedSearchAgentHitProcessorTask(
 
 
     companion object {
-        val CONSUMER_GROUP_ID = "search-agent-hit-processor"
+        val CONSUMER_GROUP_ID = "search-alert-hit-processor"
 
         val xContentRegistry = NamedXContentRegistry(
             SearchModule(

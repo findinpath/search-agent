@@ -1,6 +1,6 @@
 package com.findinpath.messenger.batch
 
 data class EmailDetails(
-    val searchAgent: SearchAgent,
+    val searchAlert: SearchAlert,
     val newsList: List<News>
 )

@@ -8,7 +8,6 @@ import org.elasticsearch.action.support.WriteRequest
 import org.elasticsearch.client.*
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
-import org.elasticsearch.client.security.RefreshPolicy
 import org.elasticsearch.common.xcontent.XContentFactory.jsonBuilder
 import org.elasticsearch.index.query.QueryBuilder
 import org.elasticsearch.index.query.QueryBuilders
@@ -22,12 +21,11 @@ import org.slf4j.LoggerFactory
 import org.testcontainers.elasticsearch.ElasticsearchContainer
 import org.testcontainers.junit.jupiter.Container
 import org.testcontainers.junit.jupiter.Testcontainers
-import java.io.IOException
 import java.time.Instant
 
 
 @Testcontainers
-class SearchAgentPercolatorTest {
+class SearchAlertPercolatorTest {
 
     @BeforeEach
     fun setup() {
@@ -52,8 +50,8 @@ class SearchAgentPercolatorTest {
 
             indexNewsNotifyDocument(client, 1, "contact@mail.com", Frequency.IMMEDIATE, "snow", "weather")
 
-            val searchAgentPercolator = SearchAgentPercolator(listOf(HttpHost.create(elasticsearchContainer.httpHostAddress)))
-            searchAgentPercolator.use {
+            val searchAlertPercolator = SearchAlertPercolator(listOf(HttpHost.create(elasticsearchContainer.httpHostAddress)))
+            searchAlertPercolator.use {
                 val response = it.percolate(news)
                 logger.info(response.toString())
 
@@ -78,22 +76,22 @@ class SearchAgentPercolatorTest {
 
 
 
-            val searchAgentsCount = 20
-            (1..searchAgentsCount).forEach {
+            val searchAlertsCount = 20
+            (1..searchAlertsCount).forEach {
                 indexNewsNotifyDocument(client, it.toLong(), "contact@mail.com", Frequency.HOURLY, "snow", "weather")
             }
 
-            val searchAgentPercolator = SearchAgentPercolator(listOf(HttpHost.create(elasticsearchContainer.httpHostAddress)))
+            val searchAlertPercolator = SearchAlertPercolator(listOf(HttpHost.create(elasticsearchContainer.httpHostAddress)))
             val pageSize = 3
-            val searchAgentIds = ArrayList<Long>()
-            searchAgentPercolator.use {
+            val searchAlertIds = ArrayList<Long>()
+            searchAlertPercolator.use {
                 var lastHitDocId: Long? = null
 
                 do {
-                    val response = searchAgentPercolator.percolate(news, lastHitDocId, pageSize)
+                    val response = searchAlertPercolator.percolate(news, lastHitDocId, pageSize)
 
                     if (response.hits.hits.size > 0) {
-                        searchAgentIds.addAll(response.hits.hits.map { it.id.toLong() })
+                        searchAlertIds.addAll(response.hits.hits.map { it.id.toLong() })
                         logger.info(response.toString())
                     }
 
@@ -107,7 +105,7 @@ class SearchAgentPercolatorTest {
                 } while (response.hits.hits.size == pageSize)
             }
 
-            assertThat(searchAgentIds, equalTo((1..searchAgentsCount.toLong()).toList()))
+            assertThat(searchAlertIds, equalTo((1..searchAlertsCount.toLong()).toList()))
 
         }
     }

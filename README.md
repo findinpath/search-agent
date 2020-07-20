@@ -49,7 +49,7 @@ in order to avoid sending duplicated messages (e.g.: for a batched search alert 
 
 The architecture of this proof of concept system is relatively simple:
 
-![architecture](images/search-agent.png)
+![architecture](images/search-alert.png)
 
 For the sake of better understanding the purpose of this system we'll consider that this
 system handles the search alert functionality for a news website.

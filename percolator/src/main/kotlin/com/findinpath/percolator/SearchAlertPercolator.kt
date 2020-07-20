@@ -16,10 +16,10 @@ import org.elasticsearch.search.sort.SortOrder
 import java.io.Closeable
 
 
-class SearchAgentPercolator(hosts: List<HttpHost>) : Closeable{
+class SearchAlertPercolator(hosts: List<HttpHost>) : Closeable{
     val client = RestHighLevelClient(RestClient.builder(*hosts.toTypedArray()))
 
-    fun percolate(news : News, searchAfterSearchAgentId: Long? = null, pageSize: Int = PAGE_SIZE) : SearchResponse{
+    fun percolate(news : News, searchAfterSearchAlertId: Long? = null, pageSize: Int = PAGE_SIZE) : SearchResponse{
 
 
         val docBuilder = XContentFactory.jsonBuilder().startObject()
@@ -37,7 +37,7 @@ class SearchAgentPercolator(hosts: List<HttpHost>) : Closeable{
         searchRequest.source(sourceBuilder)
 
 
-        searchAfterSearchAgentId?.let {
+        searchAfterSearchAlertId?.let {
             sourceBuilder.searchAfter(arrayOf(it))
         }
         sourceBuilder.query(percolateQuery)
