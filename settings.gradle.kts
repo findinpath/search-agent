@@ -1,2 +1,2 @@
-rootProject.name = "search-agent"
+rootProject.name = "search-alert"
 include("percolator", "immediate-messenger", "batched-messenger")
